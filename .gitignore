@@ -1,0 +1,12 @@
+out
+dist
+node_modules
+*/.*
+*.code-workspace
+*.vscodeignore
+*.vscode-test.mjs
+.memo.txt
+/vendor
+.aie
+.bkup_aie
+*/.aie

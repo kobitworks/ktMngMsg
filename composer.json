@@ -1,0 +1,18 @@
+{
+  "name": "kobitworks/ktmngmsg",
+  "description": "メッセージファイル管理ライブラリ",
+  "type": "library",
+  "license": "MIT",
+  "autoload": {
+    "psr-4": {
+      "kobitworks\\ktMngMsg\\": "src/"
+    }
+  },
+  "authors": [
+    {
+      "name": "Kazuhiko Shinozaki",
+      "email": "shinozaki@kobitworks.com"
+    }
+  ],
+  "require": {}
+}

@@ -71,12 +71,14 @@ class MngMessage
             }
 
             if (!file_exists($filePath)) {
-                throw new \Exception("テキストファイルが存在しません: {$filePath}");
+                //throw new \Exception("テキストファイルが存在しません: {$filePath}");
+                return '';
             }
 
             $textContent = @file_get_contents($filePath);
             if ($textContent === false) {
-                throw new \Exception("テキストファイルの読み込みに失敗しました: {$filePath}");
+                //throw new \Exception("テキストファイルの読み込みに失敗しました: {$filePath}");
+                return '';
             }
 
             return $textContent . "\n" . $prompt;

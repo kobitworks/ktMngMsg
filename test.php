@@ -10,5 +10,4 @@ $aiedir = __DIR__;
 $mng = new MngMessage($aiedir);
 
 // メッセージを先頭に追加した結果を取得
-// 'S001' は .messages ディレクトリ内のメッセージJSONファイル名として想定
-echo $mng->prependMessageFileContent('', 'S001');
+echo $mng->prependMessageFileContent('.message/sample.json');

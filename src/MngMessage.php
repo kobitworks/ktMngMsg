@@ -48,24 +48,34 @@ class MngMessage
      * JSON構造に従い再帰的にメッセージを読み込み、与えられたプロンプトの先頭に連結する
      * ファイルが存在しなければテンプレートを自動生成。
      * 
-     * @param string $prompt 元のプロンプト文字列
      * @param string $msgFile メッセージファイル名（.messagesフォルダ内）
      * @return string メッセージを先頭に追加した文字列
-     * @throws Exception ファイル読み込み失敗時など
+     * @throws \Exception ファイル読み込み失敗時など
      */
-    public function prependMessageFileContent(string $prompt, string $msgFile): string
+    public function prependMessageFileContent(string $msgFile,string $prompt = '' ): string
     {
         if (empty($msgFile)) {
             return $prompt; // 空文字は何もしない
         }
 
-        $messagesDir = $this->aieDir . DIRECTORY_SEPARATOR . '.messages';
-        $filePath = $messagesDir . DIRECTORY_SEPARATOR . $msgFile;
+        // $msgFileが絶対パスか判定。絶対パスならそのまま使い、相対パスなら $this->aieDir 配下として解決
+        if ($this->isAbsolutePath($msgFile)) {
+            $filePath = $msgFile;
+            $messagesDir = dirname($filePath);
+        } else {
+            // 相対パスの場合は $aieDir 配下で解決
+            $filePath = $this->aieDir . DIRECTORY_SEPARATOR . $msgFile;
+            $messagesDir = dirname($filePath);
+        }
+
+        if ($messagesDir === '') {
+            $messagesDir = '.';
+        }
 
         // メッセージフォルダが存在しなければ作成
         if (!is_dir($messagesDir)) {
             if (!mkdir($messagesDir, 0777, true)) {
-                throw new Exception("メッセージフォルダの作成に失敗しました: {$messagesDir}");
+                throw new \Exception("メッセージフォルダの作成に失敗しました: {$messagesDir}");
             }
         }
 
@@ -83,12 +93,12 @@ class MngMessage
 
         $content = @file_get_contents($filePath);
         if ($content === false) {
-            throw new Exception("メッセージファイルの読み込みに失敗しました: {$filePath}");
+            throw new \Exception("メッセージファイルの読み込みに失敗しました: {$filePath}");
         }
 
         $jsonData = json_decode($content, true);
         if ($jsonData === null) {
-            throw new Exception("JSON形式の解析に失敗しました: {$filePath}");
+            throw new \Exception("JSON形式の解析に失敗しました: {$filePath}");
         }
 
         $accumulatedMsg = '';
@@ -112,7 +122,14 @@ class MngMessage
 
             // message_json_file: 再帰読み込み（相対パスは.messagesディレクトリ内のファイル扱い）
             if (isset($entry['message_json_file']) && is_string($entry['message_json_file'])) {
-                $nestedMsg = $this->prependMessageFileContent('', $entry['message_json_file']);
+                $nestedFile = trim($entry['message_json_file']);
+                if ($nestedFile === '') {
+                    continue;
+                }
+                // $nestedFile は $messagesDir を起点とした相対パス or 絶対パスとして解釈したい
+                $nestedFilePath = $this->resolvePathRelativeToDir($nestedFile, $messagesDir);
+                // 再帰呼び出し：ここではフルパスで渡すことでresolve処理を二重に避ける
+                $nestedMsg = $this->prependMessageFileContent($nestedFilePath);
                 if ($nestedMsg !== '') {
                     $accumulatedMsg .= $nestedMsg . "\n";
                 }
@@ -121,13 +138,18 @@ class MngMessage
 
             // message_text_file: .messages内のテキストファイルを読み込みそのままメッセージ文字列に追加
             if (isset($entry['message_text_file']) && is_string($entry['message_text_file'])) {
-                $textFilePath = $messagesDir . DIRECTORY_SEPARATOR . $entry['message_text_file'];
+                $textFileName = trim($entry['message_text_file']);
+                if ($textFileName === '') {
+                    // 空文字なら処理スキップ
+                    continue;
+                }
+                $textFilePath = $this->resolvePathRelativeToDir($textFileName, $messagesDir);
                 if (!file_exists($textFilePath)) {
-                    throw new Exception("テキストメッセージファイルが存在しません: {$textFilePath}");
+                    throw new \Exception("テキストメッセージファイルが存在しません: {$textFilePath}");
                 }
                 $textContent = @file_get_contents($textFilePath);
                 if ($textContent === false) {
-                    throw new Exception("テキストメッセージファイルの読み込みに失敗しました: {$textFilePath}");
+                    throw new \Exception("テキストメッセージファイルの読み込みに失敗しました: {$textFilePath}");
                 }
                 $accumulatedMsg .= $textContent . "\n";
                 continue;
@@ -136,19 +158,26 @@ class MngMessage
             // file: ファイルの絶対パスでコードブロック形式にして追加
             // ここでは、$aieDir配下の相対パスとして扱い、フルパスに変換
             if (isset($entry['file']) && is_string($entry['file'])) {
-                $fileRelativePath = $entry['file'];
-                $fileFullPath = $this->resolveFullPath($fileRelativePath);
-
-                if (!file_exists($fileFullPath)) {
-                    throw new Exception("コードブロックとして読み込むファイルが存在しません: {$fileFullPath}");
+                $fileRelativePath = trim($entry['file']);
+                if ($fileRelativePath === '') {
+                    // 空文字なら処理スキップ
+                    continue;
+                }
+                $fileFullPath = $this->resolvePathRelativeToDir($fileRelativePath, $messagesDir);
+                if (!file_exists($fileFullPath) || !is_file($fileFullPath)) {
+                    //throw new \Exception("コードブロックとして読み込むファイルが存在しないかファイルではありません: {$fileFullPath}");
+                    continue;
                 }
                 $codeContent = @file_get_contents($fileFullPath);
                 if ($codeContent === false) {
-                    throw new Exception("コードブロックファイルの読み込みに失敗しました: {$fileFullPath}");
+                    //throw new \Exception("コードブロックファイルの読み込みに失敗しました: {$fileFullPath}");
+                    continue;
                 }
 
                 $fileExtension = pathinfo($fileFullPath, PATHINFO_EXTENSION);
-                $accumulatedMsg .= "```{$fileExtension}:{$fileFullPath}\n";
+                // 【修正】コードブロックの言語指定に拡張子が空の場合は plaintext に fallback
+                $language = $fileExtension !== '' ? $fileExtension : 'plaintext';
+                $accumulatedMsg .= "```{$language}:{$fileFullPath}\n";
                 $accumulatedMsg .= rtrim($codeContent, "\r\n") . "\n";
                 $accumulatedMsg .= "```\n";
                 continue;
@@ -160,17 +189,26 @@ class MngMessage
     }
 
     /**
-     * テンプレートのJSONファイルを指定パスに書き込み作成する
+     * 指定のパスを基準ディレクトリからの相対パスまたは絶対パスとして解決し、フルパスで返す
+     * フルパスの場合はそのまま返す
      * 
-     * @param string $filePath ファイルのフルパス
-     * @throws Exception ファイル書き込み失敗時
-     * @return void
+     * @param string $path 指定パス（相対または絶対）
+     * @param string $baseDir 基準ディレクトリの絶対パス
+     * @return string フルパス
      */
+    private function resolvePathRelativeToDir(string $path, string $baseDir): string
+    {
+        if ($this->isAbsolutePath($path)) {
+            return $path;
+        }
+        return rtrim($baseDir, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . $path;
+    }
+
     private function createTemplateFile(string $filePath): void
     {
         $result = @file_put_contents($filePath, self::TEMPLATE_JSON);
         if ($result === false) {
-            throw new Exception("メッセージファイルのテンプレート生成に失敗しました: {$filePath}");
+            throw new \Exception("メッセージファイルのテンプレート生成に失敗しました: {$filePath}");
         }
     }
 
@@ -198,7 +236,7 @@ class MngMessage
      * @param string $path
      * @return bool
      */
-    private function isAbsolutePath(string $path): bool
+    private function isAbsolutePath_v1(string $path): bool
     {
         if (PHP_OS_FAMILY === 'Windows') {
             // "C:\"などの形式や"\\server\share" UNCパス
@@ -208,6 +246,33 @@ class MngMessage
             return substr($path, 0, 1) === '/';
         }
     }
+
+    /**
+     * パスが絶対パスかどうかを返す
+     *
+     * @param string $path 判定したいパス文字列
+     * @return bool 絶対パスなら true、相対パスなら false
+     */
+    private function isAbsolutePath(string $path): bool
+    {
+        // Unix 系 (先頭が /)
+        if (strlen($path) > 0 && ($path[0] === '/' || $path[0] === '\\')) {
+            return true;
+        }
+
+        // Windows ドライブレター (C:\ や D:/)
+        if (preg_match('#^[A-Za-z]:[\\\\/]#', $path)) {
+            return true;
+        }
+
+        // UNC パス (\\server\share...)
+        if (substr($path, 0, 2) === '\\\\') {
+            return true;
+        }
+
+        return false;
+    }
+
     /**
      * AIEコードのルートディレクトリ
      * @var string
@@ -229,19 +294,19 @@ class MngMessage
     private const TEMPLATE_JSON = <<<JSON
 [
   {
-    "note": {"note:コメント（出力無視）"}
+    "note": "コメント（出力無視）"
   },
   {
-    "note": {"message:通常出力のテキスト"}
+    "note": "message:通常出力のテキスト"
   },
   {
-    "note": {"message_json_file:このファイルを起点に相対パス指定/再帰的に読み込み"}
+    "note": "message_json_file:このファイルを起点に相対パス指定/再帰的に読み込み"
   },
   {
-    "note": {"message_text_file:このファイルを起点に相対パス指定/テキストとして読み込み"}
+    "note": "message_text_file:このファイルを起点に相対パス指定/テキストとして読み込み"
   },
   {
-    "note": {"file:ファイル全体を読み込み。マークダウンのコードブロックとして読み込み"}
+    "note": "file:ファイル全体を読み込み。マークダウンのコードブロックとして読み込み"
   },
   {
     "message": ""

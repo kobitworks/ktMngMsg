@@ -10,3 +10,4 @@ node_modules
 .aie
 .bkup_aie
 */.aie
+.messages

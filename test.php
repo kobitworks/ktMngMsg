@@ -10,4 +10,4 @@ $aiedir = __DIR__;
 $mng = new MngMessage($aiedir);
 
 // メッセージを先頭に追加した結果を取得
-echo $mng->prependMessageFileContent('.message/sample.json');
+echo $mng->prependMessageFileContent('.messages/sample.json');

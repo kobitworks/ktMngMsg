@@ -38,7 +38,7 @@ class MngMessage
      * コンストラクタ
      * @param string $aieDir AIEコードルートディレクトリのパス
      */
-    public function __construct(string $aieDir)
+    public function __construct(string $aieDir='')
     {
         $this->aieDir = rtrim($aieDir, DIRECTORY_SEPARATOR);
     }
@@ -56,6 +56,30 @@ class MngMessage
     {
         if (empty($msgFile)) {
             return $prompt; // 空文字は何もしない
+        }
+
+
+        // 拡張子判定追加
+        $ext = strtolower(pathinfo($msgFile, PATHINFO_EXTENSION));
+        if ($ext === 'txt') {
+            // テキストファイルとして読み込み、内容をそのまま返す（プロンプトの先頭に追加）
+            // $msgFile が絶対パスか判定。絶対パスならそのまま使い、相対パスなら $this->aieDir 配下として解決
+            if ($this->isAbsolutePath($msgFile)) {
+                $filePath = $msgFile;
+            } else {
+                $filePath = $this->aieDir . DIRECTORY_SEPARATOR . $msgFile;
+            }
+
+            if (!file_exists($filePath)) {
+                throw new \Exception("テキストファイルが存在しません: {$filePath}");
+            }
+
+            $textContent = @file_get_contents($filePath);
+            if ($textContent === false) {
+                throw new \Exception("テキストファイルの読み込みに失敗しました: {$filePath}");
+            }
+
+            return $textContent . "\n" . $prompt;
         }
 
         // $msgFileが絶対パスか判定。絶対パスならそのまま使い、相対パスなら $this->aieDir 配下として解決
